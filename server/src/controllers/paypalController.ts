@@ -5,6 +5,7 @@ import { Transaction } from '../models/Transaction';
 import { HttpError } from '../middleware/errorHandler';
 import { env } from '../config/env';
 import { log, redact } from '../utils/logger';
+import { notifyPaymentCaptured } from '../services/zapierService';
 
 // Express 4 does not catch async throws — wrap every handler
 const wrap =
@@ -36,6 +37,9 @@ export const createOrder = wrap(async (req, res) => {
       quantity: i.quantity,
     })),
     total: totals.total.toFixed(2),
+    tax: totals.tax.toFixed(2),
+    shipping: totals.shipping.toFixed(2),
+    userId,
   });
 
   await Transaction.create({
@@ -81,6 +85,22 @@ export const captureOrder = wrap(async (req, res) => {
     txn.payerEmail = payerEmail;
     txn.rawCapture = redact(capture) as Record<string, unknown>;
     await txn.save();
+
+    // Post-payment automation (Zapier) — strictly after verified capture + persistence.
+    // Awaited so the demo shows the hook firing before the UI navigates away.
+    await notifyPaymentCaptured({
+      event: 'payment.captured',
+      paypalOrderId: orderId,
+      captureId,
+      amount: txn.amount,
+      currency: txn.currency,
+      status: txn.status,
+      environment: txn.environment,
+      items: txn.items.map((i) => ({ productId: i.productId, title: i.title, quantity: i.quantity, unitPrice: i.unitPrice })),
+      payerEmail,
+      occurredAt: new Date().toISOString(),
+    });
+
     res.json({ status: 'COMPLETED', transaction: txn });
   } catch (e: any) {
     txn.status = 'FAILED';

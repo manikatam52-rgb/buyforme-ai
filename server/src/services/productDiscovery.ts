@@ -7,6 +7,13 @@ import { env } from '../config/env';
  * PRODUCT_SOURCE=channel3  -> real Channel3 API (requires CHANNEL3_API_KEY).
  *
  * The adapter interface keeps them swappable — no fabricated live data.
+ *
+ * Channel3 integration (per the channel3-api skill):
+ *   Base URL   https://api.trychannel3.com
+ *   Auth       x-api-key header (server-side only — never ship the key to the browser)
+ *   Search     POST /v1/search  { query?, filters?, limit, config? }
+ *   Offers     Each product carries merchant offers (domain, price, buy url).
+ *   Caching    Cache ids, not data — prices/offers/images are unstable; refetch at display time.
  */
 
 export interface Product {
@@ -155,35 +162,122 @@ function mockSearch(p: SearchParams): Product[] {
   return items.slice(0, p.limit ?? 24);
 }
 
-async function channel3Search(p: SearchParams): Promise<Product[]> {
-  const url = new URL('/v1/products/search', env.products.channel3BaseUrl);
-  if (p.q) url.searchParams.set('q', p.q);
-  if (p.category) url.searchParams.set('category', p.category);
-  if (p.maxPrice != null) url.searchParams.set('max_price', String(p.maxPrice));
-  url.searchParams.set('limit', String(p.limit ?? 24));
+/**
+ * Channel3 wire shapes — observed live against POST /v1/search
+ * (matches the channel3-api skill; the raw HTTP response wraps products in `products`.
+ * Offer price is `{ price, currency, compare_at_price }`; offer.url is an
+ * affiliate-tracked buy link that must never be cached long-term.)
+ */
+interface Channel3Offer {
+  domain?: string;
+  price?: { price?: number; currency?: string };
+  url?: string;
+  availability?: string;
+}
 
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${env.products.channel3Key}` },
-  });
-  if (!res.ok) throw new Error(`Channel3 responded ${res.status}`);
-  const json: any = await res.json();
+interface Channel3Product {
+  id?: string;
+  title?: string;
+  description?: string;
+  brands?: { id?: string; name?: string }[];
+  images?: { url?: string; cleaned_url?: string }[];
+  category?: string;
+  key_features?: string[];
+  colors?: unknown;
+  offers?: Channel3Offer[];
+  structured_attributes?: Record<string, string[]>;
+  ratings?: { average?: number; count?: number } | number;
+}
 
-  // Map Channel3's payload to our normalised Product shape.
-  return (json.products ?? json.results ?? []).map((r: any) => ({
-    id: r.id,
-    title: r.title ?? r.name,
-    brand: r.brand ?? 'Unknown',
+/** Normalize a Channel3 offer price (an object: { price, currency }). */
+function offerAmount(offer: Channel3Offer): number {
+  return Number(offer?.price?.price ?? 0);
+}
+
+/** Pick the cheapest in-stock merchant offer (our Price column means "from"). */
+function bestOffer(product: Channel3Product) {
+  const offers = (product.offers ?? []).filter(
+    (o) => offerAmount(o) > 0 && (!o.availability || o.availability === 'InStock')
+  );
+  if (offers.length === 0) return null;
+  return offers.reduce((a, b) => (offerAmount(b) < offerAmount(a) ? b : a));
+}
+
+/** Humanize an attribute handle: "graphics-card-type" -> "Graphics Card Type". */
+function humanize(handle: string): string {
+  return handle
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+function toProduct(r: Channel3Product): Product {
+  const best = bestOffer(r);
+  const attrs = r.structured_attributes ?? {};
+  // Flatten structured_attributes into display specs. Attribute handles are
+  // kebab-case; keep the map short so the compare grid stays readable.
+  const specs: Record<string, string> = {};
+  for (const [k, v] of Object.entries(attrs)) {
+    if (Array.isArray(v) && v.length > 0) specs[humanize(k)] = v.join(', ');
+    if (Object.keys(specs).length >= 8) break;
+  }
+  const rating =
+    typeof r.ratings === 'object' && r.ratings !== null
+      ? (r.ratings as { average?: number }).average
+      : typeof r.ratings === 'number'
+        ? r.ratings
+        : undefined;
+  const reviews =
+    typeof r.ratings === 'object' && r.ratings !== null
+      ? (r.ratings as { count?: number }).count
+      : undefined;
+  return {
+    id: String(r.id ?? ''),
+    title: r.title ?? 'Untitled',
+    brand: r.brands?.[0]?.name ?? 'Unknown',
     category: r.category ?? 'general',
-    price: Number(r.price ?? r.best_offer?.price ?? 0),
-    currency: r.currency ?? 'USD',
-    rating: r.rating,
-    reviews: r.reviews_count ?? r.reviews,
-    merchant: r.merchant ?? r.offers?.[0]?.merchant ?? 'Unknown',
-    image: r.image_url ?? r.image,
-    specs: r.specifications ?? {},
-    highlights: r.highlights ?? [],
-    source: 'channel3' as const,
-  }));
+    price: best ? offerAmount(best) : 0,
+    currency: best?.price?.currency ?? env.products.channel3Currency,
+    merchant: best?.domain ?? 'Multiple merchants',
+    image: r.images?.[0]?.cleaned_url ?? r.images?.[0]?.url,
+    specs,
+    highlights: (r.key_features ?? []).slice(0, 4),
+    ...(rating != null ? { rating } : {}),
+    ...(reviews != null ? { reviews } : {}),
+    source: 'channel3',
+  };
+}
+
+async function channel3Search(p: SearchParams): Promise<Product[]> {
+  const filters: Record<string, unknown> = {};
+  if (p.maxPrice != null) filters.price = { max_price: p.maxPrice };
+
+  const res = await fetch(new URL('/v1/search', env.products.channel3BaseUrl), {
+    method: 'POST',
+    headers: {
+      'x-api-key': env.products.channel3Key,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      // Agentic mode decomposes rich user briefs into structured sub-searches;
+      // default mode is faster and right for direct keyword queries.
+      query: p.q || undefined,
+      filters: Object.keys(filters).length ? filters : undefined,
+      limit: Math.min(p.limit ?? 24, 50),
+      config: {
+        mode: env.products.channel3Mode,
+        country: env.products.channel3Country,
+        currency: env.products.channel3Currency,
+      },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Channel3 responded ${res.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
+  }
+  const json: { products?: Channel3Product[]; data?: Channel3Product[] } = await res.json();
+  const items = json.products ?? json.data ?? [];
+  return items.filter((r) => bestOffer(r) !== null).map(toProduct);
 }
 
 export async function searchProducts(p: SearchParams): Promise<{ products: Product[]; source: string }> {

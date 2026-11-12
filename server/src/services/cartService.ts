@@ -1,4 +1,5 @@
 import { Cart, ICartItem } from '../models/Cart';
+import { env } from '../config/env';
 
 export interface CartTotals {
   subtotal: number;
@@ -24,7 +25,8 @@ export function computeTotals(items: ICartItem[]): CartTotals {
   const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
   const shipping = subtotal === 0 || subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
   const total = Math.round((subtotal + tax + shipping) * 100) / 100;
-  return { subtotal, taxRate: TAX_RATE, tax, shipping, total, currency: 'INR' };
+  // Label totals in the currency PayPal will actually bill (single-currency demo).
+  return { subtotal, taxRate: TAX_RATE, tax, shipping, total, currency: env.paypal.currency };
 }
 
 export async function addToCart(userId: string, item: ICartItem) {

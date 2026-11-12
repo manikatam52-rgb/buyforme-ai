@@ -75,7 +75,12 @@ One agent handles the full journey:
 | **AG Grid** | ✅ Fully integrated | `/compare` — sorting, filtering, price/rating/spec columns, best-value highlighting |
 | **APIMatic** | 🔶 Optional, off by default | `APIMATIC_ENABLED=true` fetches grounded PayPal API docs context (`GET /api/ai/api-intelligence`); not claimed as working unless configured |
 | **Render** | ✅ Blueprint ready | `server/render.yaml` — health check, env vars, build/start commands |
-| **Postman** | ✅ Complete collection | [`docs/BuyForMe-AI.postman_collection.json`](docs/BuyForMe-AI.postman_collection.json) + environment file, incl. auto-token capture and error scenarios |
+| **Postman** | ✅ Complete collection | [`docs/BuyForMe-AI.postman_collection.json`](docs/BuyForMe-AI.postman_collection.json) + environment file, incl. auto-token capture, error scenarios and optional-integration endpoints |
+| **Elastic** | 🔶 Optional hybrid search | `ELASTIC_HOST` enables lexical + semantic (kNN via Gemini embeddings) search: `POST /api/search/elastic`, `POST /api/search/elastic/index`; 503 + honest label when unconfigured |
+| **Zapier** | 🔶 Optional automation | `ZAPIER_WEBHOOK_URL` (Webhooks-by-Zapier Catch Hook) fires `payment.captured` **only after** server-verified capture; failures never block checkout |
+| **Kernel** | 🔶 Optional research | `KERNEL_API_KEY` enables read-only product-page research: `POST /api/research/url`; payment/auth URLs are refused server-side. Never automates approval |
+| **Bryntum** | 🔶 Feed ready | `GET /api/schedule/delivery` emits Bryntum Calendar/Scheduler-shaped delivery events for completed captures (frontend renders the component) |
+| **Astropods** | ❌ Not integrated (honest) | Astropods hosts whole agent deployments, not embeddable components; integrating it would move the PayPal-critical path off our server. Documented as a possible future deployment target |
 
 ## Getting Started
 
@@ -104,9 +109,13 @@ Environment variables (all in `server/.env`):
 | `JWT_SECRET` | Token signing |
 | `MONGODB_URI` | Atlas connection string |
 | `PAYPAL_MODE`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_CURRENCY` | Sandbox credentials — **server-only, never in frontend code** |
-| `GEMINI_API_KEY`, `GEMINI_MODEL` | AI agent |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | AI agent (default `gemini-flash-lite-latest`; 1.5/2.0-flash are retired) |
 | `PRODUCT_SOURCE`, `CHANNEL3_API_KEY`, `CHANNEL3_BASE_URL` | Product discovery (`mock` or `channel3`) |
+| `CHANNEL3_COUNTRY`, `CHANNEL3_CURRENCY`, `CHANNEL3_MODE` | Channel3 locale + search mode (`default`/`agentic`) |
 | `APIMATIC_ENABLED`, `APIMATIC_API_KEY` | Optional APIMatic integration |
+| `ZAPIER_WEBHOOK_URL` | Optional Zapier Catch Hook — fires only after verified capture |
+| `ELASTIC_HOST`, `ELASTIC_API_KEY`, `ELASTIC_EMBEDDING_DIMS`, `ELASTIC_EMBEDDING_MODEL` | Optional Elastic hybrid search |
+| `KERNEL_API_KEY` | Optional Kernel cloud-browser research (read-only) |
 
 ### 3. Frontend
 

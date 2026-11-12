@@ -28,6 +28,12 @@ app.get('/health', (_req, res) =>
     env: env.nodeEnv,
     paypalConfigured: Boolean(env.paypal.clientId && env.paypal.clientSecret),
     productSource: env.products.source,
+    integrations: {
+      zapier: Boolean(env.zapier.webhookUrl),
+      elastic: Boolean(env.elastic.host),
+      kernel: Boolean(env.kernel.apiKey),
+      apimatic: env.apimatic.enabled && Boolean(env.apimatic.apiKey),
+    },
   })
 );
 

@@ -25,10 +25,20 @@ export interface CreateOrderInput {
   items: PayPalOrderItem[];
   total: string;
   currency?: string;
+  /** Authenticated user id, embedded in custom_id so capture can verify ownership. */
+  userId?: string;
+  /** Optional tax and shipping already computed server-side by cartService. */
+  tax?: string;
+  shipping?: string;
 }
 
 export async function createOrder(input: CreateOrderInput) {
   const currency = input.currency || env.paypal.currency;
+  // PayPal requires amount.breakdown.item_total whenever line items are sent,
+  // and it must equal sum(unit_amount * quantity).
+  const itemTotal = input.items
+    .reduce((s, i) => s + i.unitPrice * i.quantity, 0)
+    .toFixed(2);
 
   const request = new checkoutSdk.orders.OrdersCreateRequest();
   request.prefer('return=minimal');
@@ -36,7 +46,21 @@ export async function createOrder(input: CreateOrderInput) {
     intent: 'CAPTURE',
     purchase_units: [
       {
-        amount: { currency_code: currency, value: input.total },
+        amount: {
+          currency_code: currency,
+          value: input.total,
+          breakdown: {
+            item_total: { currency_code: currency, value: itemTotal },
+            // tax/shipping come from the authoritative server-side cart totals;
+            // PayPal validates value == item_total + tax_total + shipping.
+            ...(input.tax && input.tax !== '0.00'
+              ? { tax_total: { currency_code: currency, value: input.tax } }
+              : {}),
+            ...(input.shipping && input.shipping !== '0.00'
+              ? { shipping: { currency_code: currency, value: input.shipping } }
+              : {}),
+          },
+        },
         items: input.items.map((i) => ({
           name: i.title.slice(0, 127),
           unit_amount: {
@@ -46,6 +70,8 @@ export async function createOrder(input: CreateOrderInput) {
           quantity: String(i.quantity),
         })),
         description: 'BuyForMe AI cart (sandbox simulation)',
+        // Ownership proof: verified against the JWT user before capture
+        custom_id: input.userId,
       },
     ],
   });

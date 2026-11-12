@@ -26,4 +26,13 @@ Write-Host "transactions: $($t.transactions.Count), totalSpent=$($t.totalSpent)"
 
 # 6. Rate-limited / unauth checks
 try { Invoke-RestMethod "$base/api/cart" | Out-Null } catch { Write-Host "unauth /cart -> HTTP $($_.Exception.Response.StatusCode.value__) (expect 401)" }
+
+# 7. Integration status (honest report of optional sponsor integrations)
+$i = Invoke-RestMethod "$base/api/integrations" -Headers $h
+Write-Host "integrations: zapier=$($i.zapier.configured) elastic=$($i.elastic.configured) kernel=$($i.kernel.configured)"
+
+# 8. Health with integration flags
+$hp = Invoke-RestMethod "$base/health"
+Write-Host "health: paypalConfigured=$($hp.paypalConfigured) productSource=$($hp.productSource)"
+
 Write-Host 'SMOKE COMPLETE'

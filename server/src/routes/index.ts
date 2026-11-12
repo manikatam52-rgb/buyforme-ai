@@ -4,6 +4,7 @@ import * as ai from '../controllers/aiController';
 import * as products from '../controllers/productController';
 import * as cart from '../controllers/cartController';
 import * as orders from '../controllers/paypalController';
+import * as integrations from '../controllers/integrationsController';
 import { requireAuth } from '../middleware/auth';
 import { env } from '../config/env';
 import rateLimit from 'express-rate-limit';
@@ -42,6 +43,13 @@ router.get('/ai/api-intelligence', requireAuth, ai.apiIntelligence);
 // Products
 router.get('/products', products.search);
 router.get('/products/:id', products.detail);
+
+// Optional sponsor integrations (each 503s honestly when not configured)
+router.get('/integrations', requireAuth, integrations.integrationsStatus);
+router.post('/search/elastic', requireAuth, aiLimiter, integrations.elasticSearch);
+router.post('/search/elastic/index', requireAuth, integrations.elasticIndex);
+router.post('/research/url', requireAuth, aiLimiter, integrations.researchUrl);
+router.get('/schedule/delivery', requireAuth, integrations.deliverySchedule);
 
 // Cart
 router.get('/cart', requireAuth, cart.getCart);

@@ -31,6 +31,7 @@ export default function Discover() {
     } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
   };
 
+  // oxlint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- mount-time data fetch using the URL query
   useEffect(() => { void load(params.get('q') ?? ''); }, []);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2400); return () => window.clearTimeout(timer); }, [toast]);
 

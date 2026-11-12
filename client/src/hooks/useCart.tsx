@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import { api, API_ENDPOINTS, CartTotals, getToken } from '@/lib/api';
 
 export interface CartItem {
@@ -16,22 +16,24 @@ interface CartCtx {
   clearLocal: () => void;
 }
 
-const Ctx = createContext<CartCtx>(null as any);
-export const useCart = () => useContext(Ctx);
+// oxlint-disable-next-line react/only-export-components -- standard context + hook pattern
+export const Ctx = createContext<CartCtx>(null as any);
+export const useCart = () => useContext(Ctx); // oxlint-disable-line react/only-export-components -- standard context + hook pattern
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [totals, setTotals] = useState<CartTotals | null>(null);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     if (!getToken()) return;
     try {
       const r = await api.get<{ cart: { items: CartItem[] }; totals: CartTotals }>(API_ENDPOINTS.cart.root);
       setItems(r.cart.items); setTotals(r.totals);
     } catch { /* not logged in */ }
-  };
+  }, []);
 
-  useEffect(() => { refresh(); }, []);
+  // oxlint-disable-next-line react-hooks/set-state-in-effect -- load persisted cart once on mount
+  useEffect(() => { void refresh(); }, [refresh]);
 
   const ctx: CartCtx = {
     items, totals,

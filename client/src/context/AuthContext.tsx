@@ -12,14 +12,16 @@ interface AuthCtx {
   saveBudget: (amount: number) => Promise<void>;
 }
 
-const Ctx = createContext<AuthCtx>(null as any);
-export const useAuth = () => useContext(Ctx);
+// oxlint-disable-next-line react/only-export-components -- standard context + hook pattern
+export const Ctx = createContext<AuthCtx>(null as any);
+export const useAuth = () => useContext(Ctx); // oxlint-disable-line react/only-export-components -- standard context + hook pattern
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // oxlint-disable-next-line react-hooks/set-state-in-effect -- mount-time bootstrap of auth state
     if (!getToken()) { setLoading(false); return; }
     api.get<User>(API_ENDPOINTS.auth.me)
       .then(setUser)

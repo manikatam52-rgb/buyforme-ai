@@ -71,7 +71,7 @@ export default function Compare() {
       },
     ];
     return base;
-  }, [products, bestSet]);
+  }, [products, bestSet]); // oxlint-disable-line react-hooks/exhaustive-deps -- `add` is a stable context method; exclude to avoid needless grid rebuilds
 
   const runCompare = async () => {
     const chosen = requestedIds.length >= 2 ? products.filter((p) => requestedIds.includes(p.id)) : products.slice(0, 3);

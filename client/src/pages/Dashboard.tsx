@@ -7,6 +7,23 @@ import { useSavedProducts } from '@/hooks/useSavedProducts';
 import { useCart } from '@/hooks/useCart';
 import ProductCard from '@/components/ProductCard';
 
+const EMPTY_TRANSACTIONS: Transaction[] = [];
+
+// Pure helper: computes current-month spend + 6-month history from a transaction list.
+function computeSpending(transactions: Transaction[]) {
+  const now = new Date();
+  const currentMonthSpend = transactions.filter((transaction) => {
+    const date = new Date(transaction.createdAt);
+    return transaction.status === 'COMPLETED' && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+  }).reduce((sum, transaction) => sum + transaction.amount, 0);
+  const monthly = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(now); date.setDate(1); date.setMonth(date.getMonth() - (5 - index));
+    const amount = transactions.filter((t) => { const d = new Date(t.createdAt); return d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth() && t.status === 'COMPLETED'; }).reduce((sum, t) => sum + t.amount, 0);
+    return { label: date.toLocaleDateString(undefined, { month: 'short' }), amount };
+  });
+  return { currentMonthSpend, monthly };
+}
+
 export default function Dashboard() {
   const { user, saveBudget } = useAuth();
   const { products: savedProducts, isSaved, toggle: toggleSaved } = useSavedProducts();
@@ -18,20 +35,20 @@ export default function Dashboard() {
   const [budgetBusy, setBudgetBusy] = useState(false);
   const [budgetSaved, setBudgetSaved] = useState(false);
 
-  useEffect(() => { api.get<{ transactions: Transaction[]; totalSpent: number; currency?: string }>(API_ENDPOINTS.transactions).then(setData).catch((e) => setError(errorMessage(e))); }, []);
-  useEffect(() => { setBudget(String(user?.monthlyBudget ?? '')); }, [user?.monthlyBudget]);
+  useEffect(() => { api.get<{ transactions: Transaction[]; totalSpent: number; currency?: string }>(API_ENDPOINTS.transactions).then(setData).catch((e) => setError(errorMessage(e))); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- load once on mount
 
-  const transactions = data?.transactions ?? [];
+  // Sync the budget input when the user profile changes (React "adjust state during render" pattern)
+  const [syncedBudget, setSyncedBudget] = useState(user?.monthlyBudget);
+  if ((user?.monthlyBudget ?? undefined) !== syncedBudget) {
+    setSyncedBudget(user?.monthlyBudget);
+    setBudget(String(user?.monthlyBudget ?? ''));
+  }
+
+  const transactions = data?.transactions ?? EMPTY_TRANSACTIONS;
   const recent = transactions.slice(0, 5);
-  const currentMonthSpend = transactions.filter((transaction) => {
-    const date = new Date(transaction.createdAt); const today = new Date();
-    return transaction.status === 'COMPLETED' && date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth();
-  }).reduce((sum, transaction) => sum + transaction.amount, 0);
-  const monthly = useMemo(() => Array.from({ length: 6 }, (_, index) => {
-    const date = new Date(); date.setMonth(date.getMonth() - (5 - index));
-    const amount = transactions.filter((t) => { const d = new Date(t.createdAt); return d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth() && t.status === 'COMPLETED'; }).reduce((sum, t) => sum + t.amount, 0);
-    return { label: date.toLocaleDateString(undefined, { month: 'short' }), amount };
-  }), [transactions]);
+  // Compute the spend windows outside of render — this runs once per data load.
+  const spending = useMemo(() => computeSpending(transactions), [transactions]);
+  const { currentMonthSpend, monthly } = spending;
   const maxSpend = Math.max(1, ...monthly.map((item) => item.amount));
 
   const saveMonthlyBudget = async () => {

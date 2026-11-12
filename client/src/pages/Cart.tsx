@@ -16,7 +16,8 @@ export default function Cart() {
   const [budgetInput, setBudgetInput] = useState(String(user?.monthlyBudget ?? ''));
   const [guardianError, setGuardianError] = useState('');
 
-  useEffect(() => { refresh(); }, []);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- load cart once on mount
+  useEffect(() => { void refresh(); }, []);
 
   const runGuardian = async () => {
     setBusy(true);

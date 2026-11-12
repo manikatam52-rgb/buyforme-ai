@@ -15,6 +15,7 @@ export default function ProductDetails() {
 
   useEffect(() => {
     let alive = true;
+    // oxlint-disable-next-line react-hooks/set-state-in-effect -- fetch lifecycle state, not render sync
     setLoading(true);
     setError('');
     api.get<Product>(API_ENDPOINTS.products.detail(id))

@@ -31,7 +31,7 @@ export async function createOrder(input: CreateOrderInput) {
   const currency = input.currency || env.paypal.currency;
 
   const request = new checkoutSdk.orders.OrdersCreateRequest();
-  request.prefer('return=minimal_representation');
+  request.prefer('return=minimal');
   request.requestBody({
     intent: 'CAPTURE',
     purchase_units: [

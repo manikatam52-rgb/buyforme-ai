@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, ExternalLink, LockKeyhole, Loader2, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { ExternalLink, LockKeyhole, Loader2, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { api, API_ENDPOINTS } from '@/lib/api';
 import { useCart } from '@/hooks/useCart';
 
@@ -63,6 +63,7 @@ export default function Checkout() {
         onCancel: () => nav('/confirmation', { state: { paymentError: 'Payment was cancelled. You were not charged.' } }),
       })
       .render('#paypal-buttons');
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- buttons must render exactly once; capture/nav are stable runtime callbacks
   }, [sdkReady, totals]);
 
   if (items.length === 0) {

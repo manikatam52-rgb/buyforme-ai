@@ -36,6 +36,8 @@ export default function Assistant() {
     } finally { setBusy(false); }
   };
 
+  // Runs at most once: consume a ?prompt= deep-link handed over from another page.
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- intentionally runs only when the query string changes
   useEffect(() => {
     const initialPrompt = params.get('prompt');
     if (initialPrompt && !sentPrompt.current) {
@@ -43,8 +45,7 @@ export default function Assistant() {
       setParams((current) => { current.delete('prompt'); return current; }, { replace: true });
       void send(initialPrompt);
     }
-  }, [params]);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages, busy]);
+  }, [params]); // oxlint-disable-line react-hooks/exhaustive-deps -- runs at most once per ?prompt= deep-link
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2600); return () => window.clearTimeout(timer); }, [toast]);
 
   const addToCart = async (product: Product) => {

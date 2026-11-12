@@ -45,3 +45,4 @@ services:
       # enforced server-side via CLIENT_URL).
       - key: VITE_API_BASE_URL
         value: https://buyforme-ai-api.onrender.com/api
+

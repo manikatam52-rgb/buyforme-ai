@@ -1,0 +1,155 @@
+{
+  "info": {
+    "_postman_id": "b1a2c3d4-e5f6-4a7b-8c9d-000000000001",
+    "name": "BuyForMe AI API",
+    "description": "Complete API collection for BuyForMe AI — auth, AI shopping agent, products, cart, PayPal Sandbox order creation/capture and transactions.\n\nSet the `baseUrl` and `accessToken` variables from the environment. Login/register requests automatically store `accessToken`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000/api" },
+    { "key": "accessToken", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        { "name": "GET /health", "request": { "method": "GET", "url": "{{baseUrl}}/../health", "description": "Server health check (also reports PayPal configuration status)." } }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["const b = pm.response.json();", "if (b.token) pm.collectionVariables.set('accessToken', b.token);", "pm.test('201 created', () => pm.response.to.have.status(201));"] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Demo Shopper\",\n  \"email\": \"demo@buyforme.ai\",\n  \"password\": \"supersecret1\"\n}" }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["const b = pm.response.json();", "if (b.token) pm.collectionVariables.set('accessToken', b.token);", "pm.test('200 ok', () => pm.response.to.have.status(200));"] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"demo@buyforme.ai\",\n  \"password\": \"supersecret1\"\n}" }
+          }
+        },
+        { "name": "Me", "request": { "method": "GET", "url": "{{baseUrl}}/auth/me" } },
+        {
+          "name": "Update Preferences (budget)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/preferences",
+            "body": { "mode": "raw", "raw": "{\n  \"monthlyBudget\": 60000\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI Agent",
+      "item": [
+        {
+          "name": "Chat — shopping request",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/ai/chat",
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"Find me the best laptop for coding under 60000\",\n  \"history\": []\n}" }
+          }
+        },
+        {
+          "name": "Compare products",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/ai/compare",
+            "body": { "mode": "raw", "raw": "{\n  \"productIds\": [\"mock-lenovo-ideapad-slim5\", \"mock-asus-vivobook-15\", \"mock-hp-pavilion-14\"]\n}" }
+          }
+        },
+        {
+          "name": "Budget guardian review",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/ai/budget-review",
+            "body": { "mode": "raw", "raw": "{\n  \"total\": 62989,\n  \"items\": [{ \"title\": \"Lenovo IdeaPad Slim 5\", \"quantity\": 1 }],\n  \"budget\": 60000\n}" }
+          }
+        },
+        { "name": "API intelligence (APIMatic)", "request": { "method": "GET", "url": "{{baseUrl}}/ai/api-intelligence" } }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        { "name": "Search", "request": { "method": "GET", "url": "{{baseUrl}}/products?q=laptop&maxPrice=60000" } },
+        { "name": "Detail", "request": { "method": "GET", "url": "{{baseUrl}}/products/mock-lenovo-ideapad-slim5" } }
+      ]
+    },
+    {
+      "name": "Cart",
+      "item": [
+        { "name": "Get cart", "request": { "method": "GET", "url": "{{baseUrl}}/cart" } },
+        {
+          "name": "Add item",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/cart/items",
+            "body": { "mode": "raw", "raw": "{\n  \"productId\": \"mock-lenovo-ideapad-slim5\",\n  \"title\": \"Lenovo IdeaPad Slim 5 14\\\"\",\n  \"merchant\": \"MockStore India\",\n  \"unitPrice\": 57999,\n  \"quantity\": 1\n}" }
+          }
+        },
+        { "name": "Update quantity", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/cart/items/mock-lenovo-ideapad-slim5", "body": { "mode": "raw", "raw": "{\n  \"quantity\": 2\n}" } } },
+        { "name": "Remove item", "request": { "method": "DELETE", "url": "{{baseUrl}}/cart/items/mock-lenovo-ideapad-slim5" } }
+      ]
+    },
+    {
+      "name": "PayPal Orders",
+      "item": [
+        {
+          "name": "Create order",
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["const b = pm.response.json();", "if (b.orderId) pm.collectionVariables.set('orderId', b.orderId);", "pm.test('201 created', () => pm.response.to.have.status(201));"] }
+          }],
+          "request": { "method": "POST", "url": "{{baseUrl}}/orders/create" }
+        },
+        {
+          "name": "Capture order",
+          "request": { "method": "POST", "url": "{{baseUrl}}/orders/{{orderId}}/capture" }
+        },
+        { "name": "Get order status", "request": { "method": "GET", "url": "{{baseUrl}}/orders/{{orderId}}" } }
+      ]
+    },
+    {
+      "name": "Transactions",
+      "item": [
+        { "name": "List transactions", "request": { "method": "GET", "url": "{{baseUrl}}/transactions" } }
+      ]
+    },
+    {
+      "name": "Error scenarios",
+      "item": [
+        { "name": "401 — no token", "request": { "method": "GET", "url": "{{baseUrl}}/cart" } },
+        { "name": "400 — bad chat payload", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/ai/chat", "body": { "mode": "raw", "raw": "{}" } } },
+        { "name": "404 — unknown product", "request": { "method": "GET", "url": "{{baseUrl}}/products/does-not-exist" } },
+        { "name": "400 — empty cart order", "request": { "method": "POST", "url": "{{baseUrl}}/orders/create" } }
+      ]
+    }
+  ]
+}

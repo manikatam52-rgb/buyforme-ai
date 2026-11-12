@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { ModuleRegistry, ClientSideRowModelModule, TextFilterModule, NumberFilterModule, PaginationModule, CellStyleModule, themeQuartz, ColDef } from 'ag-grid-community';
 import { Sparkles, Loader2 } from 'lucide-react';
-import { api, API_ENDPOINTS, Product } from '@/lib/api';
+import { api, API_ENDPOINTS, Product, errorMessage } from '@/lib/api';
 import { useCart } from '@/hooks/useCart';
 import { useSearchParams } from 'react-router-dom';
 
@@ -21,15 +21,16 @@ export default function Compare() {
   const { add } = useCart();
   const [params] = useSearchParams();
   const requestedIds = (params.get('ids') ?? '').split(',').filter(Boolean);
+  const comparisonRows = requestedIds.length >= 2 ? products.filter((p) => requestedIds.includes(p.id)) : products;
 
   useEffect(() => {
-    api.get<{ products: Product[] }>(`${API_ENDPOINTS.products.list}?limit=24`).then((r) => setProducts(r.products)).catch((e) => setLoadError(String(e.message ?? 'Could not load products.')));
+    api.get<{ products: Product[] }>(`${API_ENDPOINTS.products.list}?limit=24`).then((r) => setProducts(r.products)).catch((e) => setLoadError(errorMessage(e)));
   }, []);
 
   const bestSet = useMemo(() => {
     if (!comparison) return new Set<string>();
     const names = [comparison.bestOverall, comparison.bestBudget, comparison.bestPerformance, comparison.bestValue]
-      .filter(Boolean).map((n) => (n as string).split('(')[0].trim().toLowerCase());
+      .filter(Boolean).map((n) => (n as string).split(/[(:—–-]/)[0].trim().toLowerCase());
     return new Set(names);
   }, [comparison]);
 
@@ -38,7 +39,7 @@ export default function Compare() {
       {
         headerName: 'Product', field: 'title', pinned: 'left', flex: 2, minWidth: 220,
         cellClassRules: {
-          'ag-cell-highlight-value': (p) => bestSet.has(String(p.value).toLowerCase()),
+          'ag-cell-highlight-value': (p) => [...bestSet].some((name) => String(p.value).toLowerCase().includes(name) || name.includes(String(p.value).toLowerCase())),
         },
       },
       { headerName: 'Brand', field: 'brand', filter: true, minWidth: 100 },
@@ -47,7 +48,7 @@ export default function Compare() {
         valueFormatter: (p) => `₹${Number(p.value).toLocaleString('en-IN')}`,
         cellClassRules: {
           'ag-cell-highlight-value': (p) => {
-            const min = Math.min(...products.map((x) => x.price));
+            const min = Math.min(...comparisonRows.map((x) => x.price));
             return Number(p.value) === min;
           },
         },
@@ -60,18 +61,11 @@ export default function Compare() {
       })),
       {
         headerName: '', colId: 'actions', minWidth: 110, sortable: false, filter: false,
-        cellRenderer: (p: any) => {
-          const btn = document.createElement('button');
-          btn.textContent = 'Add to cart';
-          btn.className = 'text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium';
-          btn.onclick = () =>
-            add({ productId: p.data.id, title: p.data.title, merchant: p.data.merchant, unitPrice: p.data.price, image: p.data.image });
-          return btn;
-        },
+        cellRenderer: (p: any) => <button type="button" onClick={() => void add({ productId: p.data.id, title: p.data.title, merchant: p.data.merchant, unitPrice: p.data.price, image: p.data.image })} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500">Add to cart</button>,
       },
     ];
     return base;
-  }, [products, bestSet]); // oxlint-disable-line react-hooks/exhaustive-deps -- `add` is a stable context method; exclude to avoid needless grid rebuilds
+  }, [products, bestSet, comparisonRows, add]);
 
   const runCompare = async () => {
     const chosen = requestedIds.length >= 2 ? products.filter((p) => requestedIds.includes(p.id)) : products.slice(0, 3);
@@ -81,10 +75,8 @@ export default function Compare() {
     try {
       const r = await api.post<{ comparison: Comparison }>(API_ENDPOINTS.ai.compare, { productIds: chosen.map((p) => p.id) });
       setComparison(r.comparison);
-    } catch (e) { setCompareError(String(e instanceof Error ? e.message : 'Comparison failed. Please try again.')); } finally { setBusy(false); }
+    } catch (e) { setCompareError(errorMessage(e)); } finally { setBusy(false); }
   };
-
-  const comparisonRows = requestedIds.length >= 2 ? products.filter((p) => requestedIds.includes(p.id)) : products;
 
   return (
     <div>

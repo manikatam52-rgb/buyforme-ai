@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 interface Review { overBudget: boolean; message: string; suggestions?: { productId: string; reason: string }[] }
 
 export default function Cart() {
-  const { items, totals, remove, setQty, refresh } = useCart();
+  const { items, totals, remove, setQty, refresh, loading: cartLoading, error: cartError } = useCart();
   const { user, saveBudget } = useAuth();
   const nav = useNavigate();
   const [review, setReview] = useState<Review | null>(null);
@@ -30,6 +30,8 @@ export default function Cart() {
     } catch (error) { setGuardianError(error instanceof Error ? error.message : 'Budget review is unavailable right now.'); } finally { setBusy(false); }
   };
 
+  if (cartLoading) return <div role="status" className="mx-auto max-w-xl animate-pulse rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Loading your cart…</div>;
+  if (cartError) return <div role="alert" className="mx-auto max-w-xl rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">Could not load your cart: {cartError}<button onClick={() => void refresh(true)} className="ml-2 font-semibold underline">Retry</button></div>;
   if (items.length === 0) {
     return (
       <div className="mx-auto max-w-xl rounded-3xl border border-dashed border-slate-300 px-6 py-16 text-center dark:border-slate-700">

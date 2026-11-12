@@ -11,7 +11,9 @@ export default function ProductDetails() {
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [added, setAdded] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -26,11 +28,13 @@ export default function ProductDetails() {
   }, [id]);
 
   const addItem = async () => {
-    if (!product) return;
+    if (!product || adding) return;
+    setAdding(true); setActionError('');
     try {
       await add({ productId: product.id, title: product.title, merchant: product.merchant, unitPrice: product.price, image: product.image });
       setAdded(true);
-    } catch (reason) { setError(errorMessage(reason)); }
+    } catch (reason) { setActionError(errorMessage(reason)); }
+    finally { setAdding(false); }
   };
 
   if (loading) return <div className="grid min-h-80 place-items-center text-slate-500"><Loader2 className="animate-spin" /></div>;
@@ -52,9 +56,10 @@ export default function ProductDetails() {
         {product.highlights?.length > 0 && <ul className="mt-5 space-y-2 text-sm text-slate-600 dark:text-slate-300">{product.highlights.map((point) => <li key={point} className="flex gap-2"><Check size={16} className="mt-0.5 shrink-0 text-emerald-600" />{point}</li>)}</ul>}
         {product.specs && <dl className="mt-6 grid grid-cols-2 gap-3">{Object.entries(product.specs).map(([key, value]) => <div key={key} className="rounded-xl bg-slate-100 p-3 dark:bg-slate-900"><dt className="text-xs text-slate-500">{key}</dt><dd className="mt-1 text-sm font-semibold">{value}</dd></div>)}</dl>}
         <div className="mt-auto flex flex-wrap gap-3 pt-8">
-          <button onClick={addItem} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-semibold text-white hover:bg-indigo-500"><ShoppingBag size={17} /> {added ? 'Add another' : 'Add to cart'}</button>
+          <button onClick={() => void addItem()} disabled={adding} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-semibold text-white hover:bg-indigo-500 disabled:cursor-wait disabled:opacity-60">{adding ? <Loader2 size={17} className="animate-spin" /> : <ShoppingBag size={17} />} {adding ? 'Adding…' : added ? 'Add another' : 'Add to cart'}</button>
           {added && <button onClick={() => navigate('/cart')} className="rounded-xl border border-slate-300 px-6 py-3 font-semibold dark:border-slate-700">View cart</button>}
         </div>
+        {actionError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-400/10 dark:text-rose-300">{actionError}</p>}
         <p className="mt-4 text-xs text-slate-500">Product data: {product.source || 'catalogue'} · Availability and final totals are confirmed at checkout.</p>
       </div>
     </div>

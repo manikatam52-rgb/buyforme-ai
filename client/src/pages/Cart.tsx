@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trash2, Minus, Plus, ShieldAlert, Loader2, Wallet, ShoppingBag, ArrowRight, CheckCircle2 } from 'lucide-react';
-import { api, API_ENDPOINTS } from '@/lib/api';
+import { api, API_ENDPOINTS, errorMessage } from '@/lib/api';
 import { useCart } from '@/hooks/useCart';
 import { useAuth } from '@/context/AuthContext';
 
@@ -15,19 +15,38 @@ export default function Cart() {
   const [busy, setBusy] = useState(false);
   const [budgetInput, setBudgetInput] = useState(String(user?.monthlyBudget ?? ''));
   const [guardianError, setGuardianError] = useState('');
-
-  // oxlint-disable-next-line react-hooks/exhaustive-deps -- load cart once on mount
-  useEffect(() => { void refresh(); }, []);
+  const [cartActionError, setCartActionError] = useState('');
+  const [pendingProduct, setPendingProduct] = useState('');
+  const [budgetSaving, setBudgetSaving] = useState(false);
 
   const runGuardian = async () => {
+    const editedBudget = budgetInput.trim() ? Number(budgetInput) : null;
+    if (editedBudget !== null && (!Number.isFinite(editedBudget) || editedBudget <= 0)) {
+      setGuardianError('Enter a monthly budget greater than zero.');
+      return;
+    }
     setBusy(true);
     setGuardianError('');
     try {
       let budget = user?.monthlyBudget;
-      if (budgetInput && Number(budgetInput) !== budget) { await saveBudget(Number(budgetInput)); budget = Number(budgetInput); }
+      if (editedBudget !== null && editedBudget !== budget) { await saveBudget(editedBudget); budget = editedBudget; }
       const r = await api.post<Review>(API_ENDPOINTS.ai.budgetReview, { total: totals?.total, items, budget });
       setReview(r);
-    } catch (error) { setGuardianError(error instanceof Error ? error.message : 'Budget review is unavailable right now.'); } finally { setBusy(false); }
+    } catch (error) { setGuardianError(errorMessage(error)); } finally { setBusy(false); }
+  };
+
+  const updateCart = async (productId: string, action: () => Promise<void>) => {
+    setPendingProduct(productId); setCartActionError('');
+    try { await action(); } catch (reason) { setCartActionError(errorMessage(reason)); }
+    finally { setPendingProduct(''); }
+  };
+
+  const updateBudget = async () => {
+    const amount = Number(budgetInput);
+    if (!Number.isFinite(amount) || amount <= 0) { setGuardianError('Enter a monthly budget greater than zero.'); return; }
+    setBudgetSaving(true); setGuardianError('');
+    try { await saveBudget(amount); } catch (reason) { setGuardianError(errorMessage(reason)); }
+    finally { setBudgetSaving(false); }
   };
 
   if (cartLoading) return <div role="status" className="mx-auto max-w-xl animate-pulse rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Loading your cart…</div>;
@@ -55,12 +74,12 @@ export default function Cart() {
                 <p className="mt-1 truncate text-xs text-slate-500">{i.merchant} · ₹{i.unitPrice.toLocaleString('en-IN')} each</p>
               </div>
               <div className="ml-[80px] flex items-center gap-2 sm:ml-0">
-                <button aria-label={`Decrease quantity of ${i.title}`} onClick={() => setQty(i.productId, i.quantity - 1)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"><Minus size={13} /></button>
+                <button aria-label={`Decrease quantity of ${i.title}`} disabled={i.quantity <= 1 || pendingProduct === i.productId} onClick={() => void updateCart(i.productId, () => setQty(i.productId, i.quantity - 1))} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"><Minus size={13} /></button>
                 <span className="w-6 text-center text-sm font-medium tabular-nums">{i.quantity}</span>
-                <button aria-label={`Increase quantity of ${i.title}`} onClick={() => setQty(i.productId, i.quantity + 1)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"><Plus size={13} /></button>
+                <button aria-label={`Increase quantity of ${i.title}`} disabled={i.quantity >= 10 || pendingProduct === i.productId} onClick={() => void updateCart(i.productId, () => setQty(i.productId, i.quantity + 1))} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"><Plus size={13} /></button>
               </div>
               <div className="min-w-[76px] text-right text-sm font-semibold tabular-nums">₹{(i.unitPrice * i.quantity).toLocaleString('en-IN')}</div>
-              <button aria-label={`Remove ${i.title}`} onClick={() => remove(i.productId)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-400/10"><Trash2 size={15} /></button>
+              <button aria-label={`Remove ${i.title}`} disabled={pendingProduct === i.productId} onClick={() => void updateCart(i.productId, () => remove(i.productId))} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 dark:hover:bg-rose-400/10"><Trash2 size={15} /></button>
             </div>
           ))}
         </div>
@@ -78,7 +97,8 @@ export default function Cart() {
             </dl>
           )}
           {user?.monthlyBudget && totals && <div className="mt-5 rounded-xl bg-slate-50 p-3.5 dark:bg-slate-800/70"><div className="flex justify-between text-[11px]"><span className="font-semibold text-slate-700 dark:text-slate-200">Monthly budget</span><span className="text-slate-500">{Math.min(100, Math.round(totals.total / user.monthlyBudget * 100))}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div className={`h-full rounded-full ${totals.total > user.monthlyBudget ? 'bg-amber-500' : 'bg-indigo-600'}`} style={{ width: `${Math.min(100, Math.round(totals.total / user.monthlyBudget * 100))}%` }} /></div><p className="mt-2 text-[10px] text-slate-500">₹{totals.total.toLocaleString('en-IN')} of ₹{user.monthlyBudget.toLocaleString('en-IN')}</p></div>}
-          <details className="mt-4"><summary className="cursor-pointer text-xs font-semibold text-slate-600 marker:text-indigo-600 dark:text-slate-300">Set or update monthly budget</summary><div className="mt-3 flex gap-2"><input aria-label="Monthly budget in rupees" value={budgetInput} onChange={(e) => setBudgetInput(e.target.value)} type="number" min="1" placeholder="e.g. 60000" className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-transparent px-3 py-2 text-sm focus:border-indigo-400 dark:border-slate-700" /><button onClick={async () => { if (Number(budgetInput) > 0) await saveBudget(Number(budgetInput)); }} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold dark:border-slate-700">Save</button></div></details>
+          <details className="mt-4"><summary className="cursor-pointer text-xs font-semibold text-slate-600 marker:text-indigo-600 dark:text-slate-300">Set or update monthly budget</summary><div className="mt-3 flex gap-2"><input aria-label="Monthly budget in rupees" value={budgetInput} onChange={(e) => setBudgetInput(e.target.value)} type="number" min="1" placeholder="e.g. 60000" className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-transparent px-3 py-2 text-sm focus:border-indigo-400 dark:border-slate-700" /><button disabled={budgetSaving} onClick={() => void updateBudget()} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold disabled:opacity-50 dark:border-slate-700">{budgetSaving ? 'Saving…' : 'Save'}</button></div></details>
+          {cartActionError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-700 dark:bg-rose-400/10 dark:text-rose-300">{cartActionError}</p>}
           {guardianError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-700 dark:bg-rose-400/10 dark:text-rose-300">{guardianError}</p>}
           <button onClick={runGuardian} disabled={busy} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 py-2.5 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50/60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-indigo-400/[0.07]">
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Wallet size={15} />} {busy ? 'Reviewing your budget…' : 'Ask AI to review this cart'}

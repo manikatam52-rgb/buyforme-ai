@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { api, API_ENDPOINTS, CartTotals, getToken } from '@/lib/api';
 import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -26,10 +26,12 @@ export const useCart = () => useContext(Ctx); // oxlint-disable-line react/only-
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth();
+  const userId = user?.id;
   const [items, setItems] = useState<CartItem[]>([]);
   const [totals, setTotals] = useState<CartTotals | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const pendingAdds = useRef(new Set<string>());
 
   const refresh = useCallback(async (showLoading = false) => {
     if (!getToken()) {
@@ -48,15 +50,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (authLoading) return;
     // oxlint-disable-next-line react/set-state-in-effect -- synchronize external cart data after auth resolves
-    if (user) void refresh(true);
+    if (userId) void refresh(true);
     else { setItems([]); setTotals(null); setError(''); setLoading(false); }
-  }, [user, authLoading, refresh]);
+  }, [userId, authLoading, refresh]);
 
   const ctx: CartCtx = {
     items, totals, loading, error,
     count: items.reduce((s, i) => s + i.quantity, 0),
     refresh,
-    add: async (item) => { await api.post(API_ENDPOINTS.cart.items, item); await refresh(); },
+    add: async (item) => {
+      if (pendingAdds.current.has(item.productId)) throw new Error('This product is already being added.');
+      const currentQuantity = items.find((existing) => existing.productId === item.productId)?.quantity ?? 0;
+      const quantity = Math.min(item.quantity ?? 1, 10 - currentQuantity);
+      if (quantity < 1) throw new Error('You can add up to 10 of this product.');
+      pendingAdds.current.add(item.productId);
+      try { await api.post(API_ENDPOINTS.cart.items, { ...item, quantity }); await refresh(); }
+      finally { pendingAdds.current.delete(item.productId); }
+    },
     remove: async (id) => { await api.del(API_ENDPOINTS.cart.item(id)); await refresh(); },
     setQty: async (id, qty) => { await api.patch(API_ENDPOINTS.cart.item(id), { quantity: qty }); await refresh(); },
     clearAfterPurchase: async () => {

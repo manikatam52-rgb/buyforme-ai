@@ -16,21 +16,36 @@ export default function Compare() {
   const [products, setProducts] = useState<Product[]>([]);
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [busy, setBusy] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [loadError, setLoadError] = useState('');
   const [compareError, setCompareError] = useState('');
   const { add } = useCart();
   const [params] = useSearchParams();
-  const requestedIds = (params.get('ids') ?? '').split(',').filter(Boolean);
-  const comparisonRows = requestedIds.length >= 2 ? products.filter((p) => requestedIds.includes(p.id)) : products;
+  const requestedIdsKey = params.get('ids') ?? '';
+  const requestedIds = useMemo(() => requestedIdsKey.split(',').filter(Boolean), [requestedIdsKey]);
+  const comparisonRows = products;
 
   useEffect(() => {
-    api.get<{ products: Product[] }>(`${API_ENDPOINTS.products.list}?limit=24`).then((r) => setProducts(r.products)).catch((e) => setLoadError(errorMessage(e)));
-  }, []);
+    let active = true;
+    // oxlint-disable-next-line react/set-state-in-effect -- show the pending load state before starting the request
+    setProductsLoading(true);
+    setLoadError('');
+    setProducts([]);
+    const ids = requestedIdsKey.split(',').filter(Boolean);
+    const load = ids.length >= 2
+      ? Promise.all(ids.map((id) => api.get<Product>(API_ENDPOINTS.products.detail(id))))
+      : api.get<{ products: Product[] }>(`${API_ENDPOINTS.products.list}?limit=24`).then((r) => r.products);
+    load.then((rows) => { if (active) setProducts(rows); })
+      .catch((reason) => { if (active) setLoadError(errorMessage(reason)); })
+      .finally(() => { if (active) setProductsLoading(false); });
+    return () => { active = false; };
+  }, [requestedIdsKey, loadAttempt]);
 
   const bestSet = useMemo(() => {
     if (!comparison) return new Set<string>();
     const names = [comparison.bestOverall, comparison.bestBudget, comparison.bestPerformance, comparison.bestValue]
-      .filter(Boolean).map((n) => (n as string).split(/[(:—–-]/)[0].trim().toLowerCase());
+      .filter(Boolean).map((n) => (n as string).trim().replace(/\s+[—–:]\s+.*$/, '').replace(/\s+\([^)]*\)\s*$/, '').toLowerCase());
     return new Set(names);
   }, [comparison]);
 
@@ -39,7 +54,10 @@ export default function Compare() {
       {
         headerName: 'Product', field: 'title', pinned: 'left', flex: 2, minWidth: 220,
         cellClassRules: {
-          'ag-cell-highlight-value': (p) => [...bestSet].some((name) => String(p.value).toLowerCase().includes(name) || name.includes(String(p.value).toLowerCase())),
+          'ag-cell-highlight-value': (p) => [...bestSet].some((name) => {
+            const title = String(p.value).trim().toLowerCase();
+            return Boolean(title) && (title.includes(name) || name.includes(title));
+          }),
         },
       },
       { headerName: 'Brand', field: 'brand', filter: true, minWidth: 100 },
@@ -48,14 +66,14 @@ export default function Compare() {
         valueFormatter: (p) => `₹${Number(p.value).toLocaleString('en-IN')}`,
         cellClassRules: {
           'ag-cell-highlight-value': (p) => {
-            const min = Math.min(...comparisonRows.map((x) => x.price));
+            const min = comparisonRows.length ? Math.min(...comparisonRows.map((x) => x.price)) : Number.NaN;
             return Number(p.value) === min;
           },
         },
       },
       { headerName: 'Rating', field: 'rating', minWidth: 100, sort: 'desc', sortIndex: 1, valueFormatter: (p) => (p.value ? `${p.value} ★` : '—') },
       { headerName: 'Merchant', field: 'merchant', filter: true, minWidth: 140 },
-      ...Object.keys(products[0]?.specs ?? {}).map((k) => ({
+      ...[...new Set(comparisonRows.flatMap((product) => Object.keys(product.specs ?? {})))].map((k) => ({
         headerName: k, field: `specs.${k}`, minWidth: 120,
         valueGetter: (p: any) => p.data?.specs?.[k] ?? '—',
       })),
@@ -65,7 +83,7 @@ export default function Compare() {
       },
     ];
     return base;
-  }, [products, bestSet, comparisonRows, add]);
+  }, [bestSet, comparisonRows, add]);
 
   const runCompare = async () => {
     const chosen = requestedIds.length >= 2 ? products.filter((p) => requestedIds.includes(p.id)) : products.slice(0, 3);
@@ -88,7 +106,7 @@ export default function Compare() {
       </div>
       <p className="sr-only">Click column headers to sort; use the column menu to filter. Lowest price and AI picks are highlighted.</p>
 
-      {loadError && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">Could not load comparison products: {loadError}</div>}
+      {loadError && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">Could not load comparison products: {loadError}<button onClick={() => setLoadAttempt((n) => n + 1)} className="ml-2 font-semibold underline">Retry</button></div>}
       {compareError && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{compareError}<button onClick={runCompare} className="ml-2 font-semibold underline">Retry</button></div>}
 
       {comparison && (
@@ -104,7 +122,7 @@ export default function Compare() {
         </div>
       )}
 
-      <div className="ag-theme-quartz overflow-hidden rounded-2xl border border-slate-200 shadow-sm dark:border-slate-800" style={{ height: 520, width: '100%' }}>
+      {productsLoading ? <div role="status" className="h-[520px] animate-pulse rounded-2xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-900" /> : products.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-14 text-center text-sm text-slate-500 dark:border-slate-700">No products are available to compare.</div> : <div className="ag-theme-quartz overflow-hidden rounded-2xl border border-slate-200 shadow-sm dark:border-slate-800" style={{ height: 520, width: '100%' }}>
         <AgGridReact
           rowData={comparisonRows}
           columnDefs={columnDefs}
@@ -114,7 +132,7 @@ export default function Compare() {
           defaultColDef={{ sortable: true, filter: true, floatingFilter: true, resizable: true, minWidth: 120 }}
           getRowId={(p) => p.data.id}
         />
-      </div>
+      </div>}
     </div>
   );
 }

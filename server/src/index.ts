@@ -9,7 +9,7 @@ import { env, isProd } from './config/env';
 import { errorHandler, HttpError } from './middleware/errorHandler';
 import { log } from './utils/logger';
 
-const app = express();
+export const app = express();
 app.disable('x-powered-by');
 app.use(helmet());
 app.use(compression());
@@ -61,4 +61,13 @@ async function start() {
   app.listen(env.port, () => log.info(`API listening on http://localhost:${env.port}`));
 }
 
-start();
+if (process.env.VERCEL === '1') {
+  // Serverless (Vercel): Vercel mounts `app` itself — never bind a port.
+  // Kick off the DB connection on cold start; queries buffer until ready.
+  mongoose.set('bufferTimeoutMS', 5000);
+  mongoose.connect(env.mongoUri, { serverSelectionTimeoutMS: 8000 }).catch((e: any) =>
+    log.error('MongoDB connection failed:', e?.message ?? e)
+  );
+} else {
+  start();
+}

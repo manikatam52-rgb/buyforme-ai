@@ -23,11 +23,21 @@
 - `CHANNEL3_COUNTRY` / `CHANNEL3_CURRENCY` / `CHANNEL3_MODE` — Channel3 locale and search mode
 - Check `GET /api/integrations` after deploy for the live, honest status of each.
 
-## Frontend (Vercel / Netlify / Render static)
+## Frontend on Render (static site — included in the blueprint)
+
+The blueprint now also provisions `buyforme-ai-web`, a static site:
+
+- root dir `client`, build `npm ci && npm run build`, publish `client/dist`
+- SPA rewrite `/* -> /index.html` so React Router deep links work
+- immutable cache headers for `/assets/*`
+- `VITE_API_BASE_URL` defaults to `https://buyforme-ai-api.onrender.com/api` — if Render gives your API service a different URL, change this env var in the dashboard and rebuild.
+
+After both services exist, set the API's `CLIENT_URL` env var to the static site's final URL (e.g. `https://buyforme-ai-web.onrender.com`) so CORS accepts browser calls, then redeploy the API.
+
+### Deploying elsewhere instead
 
 - Build: `npm ci && npm run build` · Publish: `client/dist`
-- Set `VITE_API_URL` style wiring or point a reverse proxy `/api` at the Render service; the bundled dev proxy is local-only.
-- For production, either configure the same-origin proxy on your host or change `client/src/lib/api.ts` `BASE` to your Render URL.
+- Set `VITE_API_BASE_URL` at build time (the client reads it in `client/src/lib/api.ts`) or point a reverse proxy `/api` at the Render service.
 
 ## Post-deploy checklist
 
